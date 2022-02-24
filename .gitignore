@@ -1,0 +1,24 @@
+### exclude all
+*
+
+### include some folders:
+!src
+!src/**
+!tests
+!tests/**
+!data_sets
+!data_sets/**
+
+### include some file extensions:
+
+!**.md
+!**.h
+!**.c
+
+### exclude file extensions:
+**.d
+
+
+
+!makefile
+!.gitignore
