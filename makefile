@@ -14,7 +14,7 @@ TEST_OBJECTS := $(TEST_SOURCES:tests/%.c=%.o)
 ###############
 
 ### EXCLUDE ###
-EXCLUDE_OBJECTS := 
+EXCLUDE_OBJECTS := gui.o
 EXCLUDE_TESTS	:=
 
 OBJECTS := $(filter-out $(EXCLUDE_OBJECTS), $(OBJECTS))
@@ -41,11 +41,17 @@ OBJECTS := $(OBJECTS:%=$(LIB_DIR)/obj/%)
 # specify were to search for sources
 VPATH := src:include:tests
 
-.PHONY: build clean test
+.PHONY: build clean test gui
 
 TEST_OUT := $(TEST_OBJECTS:%.o=$(TEST_DIR)/%.out)
 
 build: $(LIB_DIR)/$(LIB) $(TEST_OUT)
+
+GUI_FLAGS := $(shell pkg-config --cflags gtk+-3.0)
+GUI_LIBS  := $(shell pkg-config --libs gtk+-3.0)
+
+gui: build
+	$(CC) $(GUI_FLAGS) -o $(BUILD_PREFIX)/$@ src/$@.c $(GUI_LIBS)
 
 test: build
 	$(foreach test, $(TEST_OUT), ./$(test) &&)\
