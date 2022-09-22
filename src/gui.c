@@ -1,8 +1,12 @@
 #include <gtk/gtk.h>
 #include <gdk-pixbuf-2.0/gdk-pixbuf/gdk-pixbuf.h>
 
+#include <math.h>
+
 #define IMG_SCALE 10
 #define PIX_WIDTH 32
+#define PIX_STRIDE 3
+#define PIXBUF_LENGTH PIX_STRIDE * PIX_WIDTH * PIX_WIDTH
 
 GdkPixbuf *g_buf;
 
@@ -10,9 +14,8 @@ enum InputMode {
 	NONE,
 	ERASE,
 	DRAW
-};
-
-enum InputMode g_input_mode;
+} 
+g_input_mode;
 
 
 static GdkPixbuf* scalePixbuf(GdkPixbuf *buf)
@@ -36,25 +39,36 @@ static void update_image(guint x, guint y, GtkImage *image, guchar value, guint 
 
 	guchar *pixels = gdk_pixbuf_get_pixels(g_buf);
 
-	guint pos_x = x / IMG_SCALE;
-	guint pos_y = y / IMG_SCALE;
-
-	guint start_x = pos_x >= radius ? pos_x - radius : pos_x;
-	guint end_x = pos_x + radius < PIX_WIDTH ? pos_x + radius + 1 : PIX_WIDTH;
-
-	guint start_y = pos_y >= radius ? pos_y - radius : pos_y;
-	guint end_y = pos_y + radius < PIX_WIDTH ? pos_y + radius + 1 : PIX_WIDTH;
+	gint start_x = x / IMG_SCALE - radius;
+	gint start_y = y / IMG_SCALE - radius;
+	gint end_y = start_y + (2 * radius + 1);
 	
-	for (guint y = start_y; y < end_y; ++y)
+	for (gint y = start_y; y < end_y; ++y)
 	{
 		// applying brush shape
-		guint dy = brushes[radius][y - start_y];
+		gint dy = brushes[radius][y - start_y];
 
-		for (guint x = start_x + dy; x < end_x - dy; ++x)
+		// calculate pixel index
+		gint x = start_x + dy;
+		gint span = 2*(radius-dy) + 1;
+		
+		// if x less then zero, write only rest of the pixels
+		if (x < 0)
 		{
-			// calculate pixel index
-			guint idx = 3 * (y * PIX_WIDTH + x);
-			memset(pixels+idx, value, 3);
+			span += x;
+			x = 0;
+		}
+		
+		if (y >= 0 && y < PIX_WIDTH && x < PIX_WIDTH)
+		{
+			gint idx = PIX_STRIDE * (y * PIX_WIDTH + x);
+			
+			if (x + span >= PIX_WIDTH)
+			{
+				span = -x + PIX_WIDTH;
+			}
+
+			memset(pixels+idx, value, span*PIX_STRIDE);
 		}
 	}
 	
@@ -66,9 +80,9 @@ static void update_image(guint x, guint y, GtkImage *image, guchar value, guint 
 
 gboolean on_mouse_move(GtkWidget* widget, GdkEventMotion *event, gpointer user_data) 
 {
-	GtkBox *box = (GtkBox*) gtk_container_get_children((GtkContainer*) widget)->data;
+	GtkBox *box = (GtkBox*) widget; 
 	GtkImage *image = (GtkImage*) gtk_container_get_children((GtkContainer*) box)->data;
-	
+
 	if (g_input_mode == DRAW)
 	{
 		update_image(event->x, event->y, image, 255, 1);
@@ -83,9 +97,9 @@ gboolean on_mouse_move(GtkWidget* widget, GdkEventMotion *event, gpointer user_d
 
 gboolean on_button_press(GtkWidget *widget, GdkEventButton *event, gpointer user_data)
 {
-	GtkBox *box = (GtkBox*) gtk_container_get_children((GtkContainer*) widget)->data;
+	GtkBox *box = (GtkBox*) widget; 
 	GtkImage *image = (GtkImage*) gtk_container_get_children((GtkContainer*) box)->data;
-	
+ 
 	if (event->type == GDK_BUTTON_PRESS)
 	{
 		if (event->button == GDK_BUTTON_PRIMARY)
@@ -130,16 +144,63 @@ static GtkWidget* makeImage(guint w, guint h)
 	g_input_mode = NONE;
 
 	GdkPixbuf *scaled = scalePixbuf(g_buf);
-	GtkImage *image = (GtkImage*) gtk_image_new_from_pixbuf(scaled);	
-	
+	GtkWidget *image = gtk_image_new_from_pixbuf(scaled);	
 	gtk_widget_set_hexpand((GtkWidget*)image, TRUE);
 	gtk_widget_set_vexpand((GtkWidget*)image, TRUE);
 
-	// wrap grid inside container
-	GtkContainer *wrapper = (GtkContainer*) gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
-	gtk_box_pack_start((GtkBox*)wrapper, (GtkWidget*)image, TRUE, TRUE, 0);
+	GtkContainer *box = (GtkContainer*) gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 0);
+	GtkContainer *wrapper = (GtkContainer*) gtk_fixed_new();
+	
+	GtkWidget *ebox = gtk_event_box_new(); 
+	gtk_container_add((GtkContainer*) ebox, (GtkWidget*) image);
 
-	return (GtkWidget*) wrapper;
+    g_signal_connect(G_OBJECT(ebox), "motion-notify-event", G_CALLBACK(on_mouse_move), NULL);
+    g_signal_connect(G_OBJECT(ebox), "button-press-event", G_CALLBACK(on_button_press), NULL);
+    g_signal_connect(G_OBJECT(ebox), "button-release-event", G_CALLBACK(on_button_release), NULL);
+
+	GtkTreeModel *list_store = (GtkTreeModel*)gtk_list_store_new(2, G_TYPE_STRING, G_TYPE_INT);
+	GtkTreeIter iter;
+	gtk_tree_model_get_iter_first(list_store, &iter);	
+	
+	// populating list with values:
+	static const char* names[10] = {"0", "1", "2", "3", "4", "5", "6", "7", "8", "9"};
+	
+	for (int i = 0; i < 10; i++) 
+	{
+		gtk_list_store_append((GtkListStore*) list_store, &iter);
+		gtk_list_store_set((GtkListStore*) list_store, 
+			&iter, 
+			0, names[i], 
+			1, i*10, 
+			-1);
+	 }		
+	
+	// resetting iter
+	gtk_tree_model_get_iter_first(list_store, &iter);	
+
+	GtkTreeView *tree_view = (GtkTreeView*) gtk_tree_view_new_with_model(list_store);
+	
+	GtkCellRenderer *text_rend = gtk_cell_renderer_text_new();
+	GtkTreeViewColumn *text_col = gtk_tree_view_column_new_with_attributes("Digit", 
+		(GtkCellRenderer*) text_rend, 
+		"text", 0, // wtf ?
+		NULL); // null termination
+	gtk_tree_view_append_column(tree_view, text_col);
+
+	GtkCellRenderer *prog_rend = gtk_cell_renderer_progress_new();
+	GtkTreeViewColumn *prog_col = gtk_tree_view_column_new_with_attributes("Result", 
+		prog_rend,
+		"value", 1,
+		NULL); 
+
+	gtk_tree_view_append_column(tree_view, prog_col);
+	
+	gtk_fixed_put((GtkFixed*) wrapper, ebox, 0, 0);
+	
+	gtk_container_add(box, (GtkWidget*) wrapper);
+	gtk_container_add(box, (GtkWidget*) tree_view);
+	
+	return (GtkWidget*) box;
 }
 
 
@@ -151,12 +212,6 @@ static void activate(GtkApplication* app, gpointer user_data)
 	window = gtk_application_window_new(app);
 	gtk_window_set_title(GTK_WINDOW(window), "Window");
 	gtk_window_set_default_size(GTK_WINDOW(window), 200, 200);
-	
-
-    g_signal_connect(G_OBJECT(window), "motion-notify-event", G_CALLBACK(on_mouse_move), NULL);
-    g_signal_connect(G_OBJECT(window), "button-press-event", G_CALLBACK(on_button_press), NULL);
-    g_signal_connect(G_OBJECT(window), "button-release-event", G_CALLBACK(on_button_release), NULL);
-	gtk_widget_add_events(window, GDK_POINTER_MOTION_MASK);
 	
 	// attach grid
 	gtk_container_add((GtkContainer*) window, makeImage(PIX_WIDTH, PIX_WIDTH));
