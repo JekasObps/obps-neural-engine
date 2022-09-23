@@ -51,7 +51,7 @@ GUI_FLAGS := $(shell pkg-config --cflags gtk+-3.0)
 GUI_LIBS  := $(shell pkg-config --libs gtk+-3.0)
 
 gui: build
-	$(CC) $(GUI_FLAGS) -o $(BUILD_PREFIX)/$@ src/$@.c $(GUI_LIBS)
+	$(CC) $(GUI_FLAGS) -o $(BUILD_PREFIX)/$@ src/$@.c $(GUI_LIBS) $(LINKS) -Wl,-rpath=$(PWD)/$(LIB_DIR) -L$(LIB_DIR) 
 
 test: build
 	$(foreach test, $(TEST_OUT), ./$(test) &&)\
